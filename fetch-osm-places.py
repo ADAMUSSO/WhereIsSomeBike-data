@@ -28,12 +28,16 @@ from pathlib import Path
 
 NETWORKS = 'https://api.citybik.es/v2/networks?fields=id,location'
 SERVERS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter']
+# last week's tiles, kept for a city Overpass fails on
+PUBLISHED = 'https://adamusso.github.io/WhereIsSomeBike-data/places/v1'
 USER_AGENT = 'WhereIsSomeBike/1.0 data build (+https://github.com/ADAMUSSO/WhereIsSomeBike-data)'
 TILE = 0.1  # same as TILE in the app's src/lib/places.ts
 RADIUS_KM = 10  # AREA_KM in the app's src/lib/cities.ts: what counts as "in town"
 PAUSE_S = 3
 BACKOFF_S = 60
 TRIES = 6
+# after this many cities in a row fail, Overpass is down: keep last week's tiles for the rest
+MAX_FAILS_IN_ROW = 5
 # everything the app's src/lib/places.ts reads; the rest would only make the tiles bigger
 KEEP_TAGS = {
     'amenity', 'shop', 'name', 'access', 'capacity', 'covered', 'seasonal', 'opening_hours',
@@ -85,6 +89,20 @@ def overpass(bbox: str) -> list[dict]:
     raise RuntimeError(f'Overpass gave up on {bbox}')
 
 
+def keep_published(block: set[tuple[int, int]], tile_dir: Path) -> int:
+    """Copies a block's tiles from the live site; returns how many it had."""
+    kept = 0
+    for y, x in block:
+        req = urllib.request.Request(f'{PUBLISHED}/{y}_{x}.json', headers={'User-Agent': USER_AGENT})
+        try:
+            with urllib.request.urlopen(req, timeout=30) as res:
+                (tile_dir / f'{y}_{x}.json').write_bytes(res.read())
+            kept += 1
+        except (urllib.error.URLError, TimeoutError):
+            pass  # never built: the app asks Overpass for it
+    return kept
+
+
 def compact(el: dict) -> dict | None:
     tags = {k: v for k, v in (el.get('tags') or {}).items() if k in KEEP_TAGS}
     if tags.get('access') in ('private', 'no'):
@@ -120,6 +138,8 @@ def main():
                 y, x = f.stem.split('_')
                 done.add((int(y), int(x)))
 
+    failed: list[str] = []
+    fails_in_row = 0
     # nearby systems share their tiles: one Overpass request per still-missing block
     for i, n in enumerate(networks, 1):
         loc = n['location']
@@ -132,8 +152,25 @@ def main():
         bbox = f'{south * TILE:.4f},{west * TILE:.4f},{north * TILE:.4f},{east * TILE:.4f}'
         print(f'[{i}/{len(networks)}] {loc["city"]} ({n["id"]}): {len(block)} tiles')
 
+        # one city failing must not cost the whole week's update
+        elements = None
+        if fails_in_row < MAX_FAILS_IN_ROW:
+            try:
+                elements = overpass(bbox)
+            except RuntimeError:
+                pass
+        if elements is None:
+            kept = keep_published(block, tile_dir)
+            failed.append(f'{loc["city"]} ({n["id"]})')
+            fails_in_row += 1
+            # shows up as a warning on the workflow run
+            print(f'::warning::No Overpass data for {loc["city"]} ({n["id"]}), kept {kept}/{len(block)} old tiles')
+            done |= block
+            continue
+        fails_in_row = 0
+
         tiles: dict[tuple[int, int], list[dict]] = {k: [] for k in block}
-        for el in overpass(bbox):
+        for el in elements:
             c = compact(el)
             # the same float division as Math.floor(lat / TILE) in the app
             k = c and (math.floor(c['lat'] / TILE), math.floor(c['lon'] / TILE))
@@ -161,7 +198,9 @@ def main():
         f'Bike services extracted from OpenStreetMap.\n\nData {ATTRIBUTION}, https://www.openstreetmap.org/copyright\n'
         f'Available under the {LICENSE}\n'
     )
-    print(f'{len(done)} tiles -> {tile_dir}')
+    print(f'{len(list(tile_dir.glob("*.json")))} tiles -> {tile_dir}')
+    if failed:
+        print(f'{len(failed)} cities kept old tiles: {", ".join(failed)}')
 
 
 if __name__ == '__main__':
