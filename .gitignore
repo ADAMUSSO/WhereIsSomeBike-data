@@ -1,0 +1,3 @@
+# built by fetch-osm-places.py, published by the workflow
+site/
+__pycache__/

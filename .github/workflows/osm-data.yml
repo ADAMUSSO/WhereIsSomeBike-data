@@ -1,0 +1,45 @@
+# Rebuilds the OpenStreetMap bike-service tiles every week and publishes them on
+# GitHub Pages, where the Where Is Some Bike? app reads them.
+name: OSM data
+
+on:
+  schedule:
+    - cron: '17 3 * * 1' # Mondays, 03:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+  actions: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # one polite Overpass request per city takes a while
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 fetch-osm-places.py --out site
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+      # GitHub switches schedules off after 60 days without commits; re-enabling
+      # through the API keeps it running without bot commits
+      - run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/osm-data.yml/enable"
+        env:
+          GH_TOKEN: ${{ github.token }}
