@@ -6,14 +6,18 @@ a time with pauses, as the Overpass usage policy asks – and writes them as 0.1
 tiles, the same grid the app caches on the phone (its src/lib/places.ts). Tags are
 kept raw, so the app parses these tiles and Overpass answers the same way.
 
-.github/workflows/osm-data.yml runs this weekly and publishes the output on GitHub
+.github/workflows/osm-data.yml runs this daily and publishes the output on GitHub
 Pages, where the app reads it (`expo.extra.osmDataUrl` in its app.json). Tiles
 missing here, the app still asks Overpass for.
+
+All ~800 cities take longer than one GitHub job may run while Overpass is busy, so a
+run refreshes the cities built longest ago until --budget-min is up and remembers in
+--state when each was built; the workflow keeps the tiles and that file between runs.
 
 The data is © OpenStreetMap contributors under the ODbL; the folder carries that
 notice so it travels with the files.
 
-    python3 fetch-osm-places.py [--out site] [--only bratislava,zilina] [--resume]
+    python3 fetch-osm-places.py [--out site] [--only bratislava,zilina] [--state built.json] [--budget-min 300]
 """
 import argparse
 import json
@@ -35,7 +39,10 @@ TILE = 0.1  # same as TILE in the app's src/lib/places.ts
 RADIUS_KM = 10  # AREA_KM in the app's src/lib/cities.ts: what counts as "in town"
 PAUSE_S = 3
 BACKOFF_S = 60
-TRIES = 6
+# at most ~20 minutes on one city, so a run never overshoots its budget by much
+TRIES = 4
+# a city built less than this long ago is skipped, so each one is refreshed about weekly
+MAX_AGE_S = 6 * 24 * 3600
 # after this many cities in a row fail, Overpass is down: keep last week's tiles for the rest
 MAX_FAILS_IN_ROW = 5
 # everything the app's src/lib/places.ts reads; the rest would only make the tiles bigger
@@ -90,9 +97,12 @@ def overpass(bbox: str) -> list[dict]:
 
 
 def keep_published(block: set[tuple[int, int]], tile_dir: Path) -> int:
-    """Copies a block's tiles from the live site; returns how many it had."""
+    """Keeps a block's tiles from the last run, or copies them from the live site; returns how many it had."""
     kept = 0
     for y, x in block:
+        if (tile_dir / f'{y}_{x}.json').exists():
+            kept += 1
+            continue
         req = urllib.request.Request(f'{PUBLISHED}/{y}_{x}.json', headers={'User-Agent': USER_AGENT})
         try:
             with urllib.request.urlopen(req, timeout=30) as res:
@@ -118,39 +128,44 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--out', default=str(Path(__file__).resolve().parent / 'site'))
     ap.add_argument('--only', help='comma-separated network ids or city names, for a quick test')
-    ap.add_argument('--resume', action='store_true', help='keep tiles written in the last 6 days')
+    ap.add_argument('--state', help='JSON file remembering when each city was built, kept between runs')
+    ap.add_argument('--budget-min', type=float, help='start no new city after this many minutes')
     args = ap.parse_args()
+    deadline = time.time() + args.budget_min * 60 if args.budget_min else math.inf
 
     out = Path(args.out)
     tile_dir = out / 'places' / 'v1'
     tile_dir.mkdir(parents=True, exist_ok=True)
+    state = Path(args.state) if args.state else None
+    built: dict[str, float] = json.loads(state.read_text()) if state and state.exists() else {}
 
     networks = get_json(NETWORKS)['networks']
     if args.only:
         wanted = {fold(w.strip()) for w in args.only.split(',')}
         networks = [n for n in networks if n['id'] in wanted or fold(n['location']['city']) in wanted]
+    # never-built cities first, then the stalest
+    networks.sort(key=lambda n: built.get(n['id'], 0))
+    stale = [n for n in networks if built.get(n['id'], 0) < time.time() - MAX_AGE_S]
+    print(f'{len(stale)} of {len(networks)} cities to refresh')
 
     done: set[tuple[int, int]] = set()
-    if args.resume:
-        fresh = time.time() - 6 * 24 * 3600
-        for f in tile_dir.glob('*.json'):
-            if f.stat().st_mtime > fresh:
-                y, x = f.stem.split('_')
-                done.add((int(y), int(x)))
-
     failed: list[str] = []
     fails_in_row = 0
     # nearby systems share their tiles: one Overpass request per still-missing block
-    for i, n in enumerate(networks, 1):
+    for i, n in enumerate(stale, 1):
+        if time.time() > deadline:
+            print(f'Out of time, {len(stale) - i + 1} cities wait for the next run')
+            break
         loc = n['location']
         missing = tiles_around(loc['latitude'], loc['longitude']) - done
         if not missing:
+            built[n['id']] = time.time()
             continue
         south, north = min(y for y, _ in missing), max(y for y, _ in missing) + 1
         west, east = min(x for _, x in missing), max(x for _, x in missing) + 1
         block = {(y, x) for y in range(south, north) for x in range(west, east)} - done
         bbox = f'{south * TILE:.4f},{west * TILE:.4f},{north * TILE:.4f},{east * TILE:.4f}'
-        print(f'[{i}/{len(networks)}] {loc["city"]} ({n["id"]}): {len(block)} tiles')
+        print(f'[{i}/{len(stale)}] {loc["city"]} ({n["id"]}): {len(block)} tiles')
 
         # one city failing must not cost the whole week's update
         elements = None
@@ -179,8 +194,13 @@ def main():
         for (y, x), elements in tiles.items():
             (tile_dir / f'{y}_{x}.json').write_text(json.dumps({'elements': elements}, separators=(',', ':')))
         done |= block
+        built[n['id']] = time.time()
+        if state:
+            state.write_text(json.dumps(built))
         time.sleep(PAUSE_S)
 
+    if state:
+        state.write_text(json.dumps(built))
     (out / 'index.json').write_text(
         json.dumps(
             {

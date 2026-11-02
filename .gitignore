@@ -1,3 +1,4 @@
 # built by fetch-osm-places.py, published by the workflow
 site/
+built.json
 __pycache__/
