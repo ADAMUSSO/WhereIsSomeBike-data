@@ -11,9 +11,10 @@ cities) came down too slowly for one GitHub job. Tags are kept raw and each elem
 carries its bounding-box centre like Overpass's `out center`, so the app parses these
 tiles and Overpass answers the same way.
 
-.github/workflows/osm-data.yml runs this weekly and publishes the output on GitHub
-Pages, where the app reads it (`expo.extra.osmDataUrl` in its app.json). Tiles
-missing here, the app still asks Overpass for.
+QLever refuses GitHub's servers (HTTP 403), so this runs on a computer: publish.sh
+builds the tiles, uploads them and starts .github/workflows/osm-data.yml, which
+publishes them on GitHub Pages, where the app reads them (`expo.extra.osmDataUrl` in
+its app.json). Tiles missing here, the app still asks Overpass for.
 
 The data is © OpenStreetMap contributors under the ODbL; the folder carries that
 notice so it travels with the files.

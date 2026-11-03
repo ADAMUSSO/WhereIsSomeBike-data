@@ -5,9 +5,10 @@ shops, drinking water and bike parking – around every bike-share city listed b
 [CityBikes](https://citybik.es), cut into 0.1° tiles for the Where Is Some Bike? Android app.
 The app reads them here instead of asking the volunteer-run Overpass servers from every phone.
 
-- Built weekly from [QLever](https://qlever.dev)'s copy of the OpenStreetMap planet by
-  [`fetch-osm-places.py`](fetch-osm-places.py) in
-  [`.github/workflows/osm-data.yml`](.github/workflows/osm-data.yml) and published on GitHub Pages:
+- Built from [QLever](https://qlever.dev)'s copy of the OpenStreetMap planet by
+  [`fetch-osm-places.py`](fetch-osm-places.py), run about weekly on a computer through
+  [`publish.sh`](publish.sh) (QLever refuses GitHub's servers), and published on GitHub Pages by
+  [`.github/workflows/osm-data.yml`](.github/workflows/osm-data.yml):
   `https://adamusso.github.io/WhereIsSomeBike-data/places/v1/<y>_<x>.json`, where
   `y = floor(lat / 0.1)` and `x = floor(lon / 0.1)`.
 - [`index.json`](https://adamusso.github.io/WhereIsSomeBike-data/index.json) says when the tiles were built.
@@ -18,7 +19,13 @@ Each tile holds the raw OSM elements with the tags the app uses:
 {"elements":[{"type":"node","id":438496593,"lat":48.152248,"lon":17.141689,"tags":{"shop":"bicycle","name":"Green Bike"}}]}
 ```
 
-Build locally (Python 3, no packages needed, about a minute):
+Build and publish (Python 3 and a signed-in [GitHub CLI](https://cli.github.com), about a minute):
+
+```bash
+./publish.sh
+```
+
+Or only build a few cities to look at:
 
 ```bash
 python3 fetch-osm-places.py --only bratislava,zilina
