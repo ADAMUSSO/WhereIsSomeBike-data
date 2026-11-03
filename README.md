@@ -5,7 +5,8 @@ shops, drinking water and bike parking – around every bike-share city listed b
 [CityBikes](https://citybik.es), cut into 0.1° tiles for the Where Is Some Bike? Android app.
 The app reads them here instead of asking the volunteer-run Overpass servers from every phone.
 
-- Built daily (each city about once a week) by [`fetch-osm-places.py`](fetch-osm-places.py) in
+- Built weekly from [Geofabrik](https://download.geofabrik.de)'s OpenStreetMap extracts by
+  [`fetch-osm-places.py`](fetch-osm-places.py) in
   [`.github/workflows/osm-data.yml`](.github/workflows/osm-data.yml) and published on GitHub Pages:
   `https://adamusso.github.io/WhereIsSomeBike-data/places/v1/<y>_<x>.json`, where
   `y = floor(lat / 0.1)` and `x = floor(lon / 0.1)`.
@@ -17,10 +18,11 @@ Each tile holds the raw OSM elements with the tags the app uses:
 {"elements":[{"type":"node","id":438496593,"lat":48.152248,"lon":17.141689,"tags":{"shop":"bicycle","name":"Green Bike"}}]}
 ```
 
-Build locally (Python 3, no packages needed):
+Build locally (Python 3 and [osmium-tool](https://osmcode.org/osmium-tool/), e.g. `apt install osmium-tool`):
 
 ```bash
-python3 fetch-osm-places.py --only bratislava,zilina --state built.json
+python3 fetch-osm-places.py --only bratislava,zilina
+python3 fetch-osm-places.py --plan  # which extracts a full build downloads, and how big
 ```
 
 ## License

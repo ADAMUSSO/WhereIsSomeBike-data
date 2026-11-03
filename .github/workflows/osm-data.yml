@@ -1,12 +1,10 @@
-# Rebuilds the OpenStreetMap bike-service tiles and publishes them on GitHub Pages,
-# where the Where Is Some Bike? app reads them. A run refreshes the cities built
-# longest ago for a few hours; the tiles are kept in the Actions cache between runs,
-# so every city comes round about once a week.
+# Rebuilds the OpenStreetMap bike-service tiles every week from Geofabrik's extracts
+# and publishes them on GitHub Pages, where the Where Is Some Bike? app reads them.
 name: OSM data
 
 on:
   schedule:
-    - cron: '17 3 * * *' # daily, 03:17 UTC
+    - cron: '17 3 * * 1' # Mondays, 03:17 UTC
   workflow_dispatch:
 
 permissions:
@@ -22,27 +20,13 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    # GitHub stops a job at 6 h; the script stops starting cities well before that
-    timeout-minutes: 340
+    # ~50 GB of extracts, downloaded and filtered one at a time
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/cache/restore@v4
-        with:
-          path: |
-            site
-            built.json
-          key: osm-site-${{ github.run_id }}
-          restore-keys: osm-site-
+      - run: sudo apt-get update -q && sudo apt-get install -yq osmium-tool
       # -u: print as it goes, so the log shows progress
-      - run: python3 -u fetch-osm-places.py --out site --state built.json --budget-min 290
-      # saved even when the build fails, so the next run does not start over
-      - if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            site
-            built.json
-          key: osm-site-${{ github.run_id }}
+      - run: python3 -u fetch-osm-places.py --out site --work "$RUNNER_TEMP/extracts"
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
