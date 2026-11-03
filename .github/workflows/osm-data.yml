@@ -1,5 +1,5 @@
-# Rebuilds the OpenStreetMap bike-service tiles every week from Geofabrik's extracts
-# and publishes them on GitHub Pages, where the Where Is Some Bike? app reads them.
+# Rebuilds the OpenStreetMap bike-service tiles every week from QLever and publishes
+# them on GitHub Pages, where the Where Is Some Bike? app reads them.
 name: OSM data
 
 on:
@@ -20,13 +20,12 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    # ~50 GB of extracts, downloaded and filtered one at a time
-    timeout-minutes: 180
+    # four queries of under a minute each, retried for a while if QLever is down
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update -q && sudo apt-get install -yq osmium-tool
       # -u: print as it goes, so the log shows progress
-      - run: python3 -u fetch-osm-places.py --out site --work "$RUNNER_TEMP/extracts"
+      - run: python3 -u fetch-osm-places.py --out site
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
