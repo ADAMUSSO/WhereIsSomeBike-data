@@ -2,7 +2,8 @@
 
 Bike services from [OpenStreetMap](https://www.openstreetmap.org) – repair stations, bike
 shops, drinking water and bike parking – around every bike-share city listed by
-[CityBikes](https://citybik.es), cut into 0.1° tiles for the Where Is Some Bike? Android app.
+[CityBikes](https://citybik.es), cut into 0.1° tiles for the [Where Is Some Bike?](https://whereissomebike.pages.dev) Android app –
+shared bikes, free docks and e-scooters from every operator on one map.
 The app reads them here instead of asking the volunteer-run Overpass servers from every phone.
 
 - Built from [QLever](https://qlever.dev)'s copy of the OpenStreetMap planet by
